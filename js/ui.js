@@ -103,9 +103,11 @@ export function toast(message, { error = false, ms = 2600 } = {}) {
   }
   toastNode.textContent = message;
   toastNode.classList.toggle('err', !!error);
-  toastNode.classList.add('show');
+  // 状態クラスは 'on'。'show' は公演リストの行クラスと衝突し、
+  // 同じ詳細度で width:100% を拾ってトーストが画面幅いっぱいに広がる。
+  toastNode.classList.add('on');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastNode.classList.remove('show'), ms);
+  toastTimer = setTimeout(() => toastNode.classList.remove('on'), ms);
 }
 
 /* ---------------- モーダル ---------------- */

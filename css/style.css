@@ -293,14 +293,22 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .notice.ok{background:rgba(61,220,151,.1);border-color:rgba(61,220,151,.3);color:#9fe9c8}
 .notice b{color:inherit}
 
+/* 表示状態は .on。公演リストの行が .show を使っているため、
+   同名にすると同じ詳細度で width:100% を拾って幅いっぱいに広がる。
+
+   中央寄せは left:16px/right:16px + margin-inline:auto で行う。
+   left:50% + translateX(-50%) だと、固定配置要素の利用可能幅が
+   「画面幅 − left」に狭まり、短い文言でも折り返してしまう
+   （transform はレイアウト後に効くため幅計算には入らない）。 */
 .toast{
-  position:fixed;left:50%;bottom:calc(var(--tabh) + 20px);transform:translateX(-50%);
+  position:fixed;left:16px;right:16px;bottom:calc(var(--tabh) + 20px);
+  width:fit-content;max-width:calc(100vw - 32px);margin-inline:auto;
   background:#2a2a3d;color:var(--text);padding:11px 18px;border-radius:999px;
   font-size:13px;font-weight:700;box-shadow:0 8px 28px rgba(0,0,0,.5);
-  z-index:200;opacity:0;pointer-events:none;transition:.25s;max-width:calc(100vw - 32px);
+  z-index:200;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
   text-align:center;border:1px solid var(--line-hi);
 }
-.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+.toast.on{opacity:1;transform:translateY(-6px)}
 .toast.err{background:#4a2230;border-color:rgba(255,84,112,.4)}
 
 .modal-bg{
