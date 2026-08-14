@@ -109,25 +109,38 @@ export function displayName(name) {
  * iTunes の検索結果から、目的の曲らしいトラックを選ぶ。
  *
  * setlist.fm はラテン文字しか扱えないため、日本語タイトルの曲は
- * ローマ字表記で入っている。iTunes 側は日本語タイトルで返ってくるので、
- * 文字列としては一致しない。そこで
+ * ローマ字表記で入っている（例: 「宿命」→「Shukumei」）。
+ * iTunes 側は日本語タイトルで返るので、文字列では一致しない。そこで
  *   1. 曲名キーが完全一致するもの（英語タイトル曲はここで決まる）
- *   2. 同じアーティストの検索結果の最上位（ローマ字検索でも Apple の
- *      検索インデックスがかなり拾ってくれる）
+ *   2. 同じアーティストの検索結果の最上位（ローマ字で検索しても
+ *      Apple の検索インデックスがかなり拾ってくれる）
  * の順で選び、2 で決めたものは confidence を下げて手動確認を促す。
  *
+ * アーティストの同定は名前の文字列比較では効かない
+ * （setlist.fm「Official HIGE DANdism」/ iTunes「Official髭男dism」）。
+ * iTunes のアーティストIDが分かっていればそれで絞る。
+ *
+ * @param {number} [itunesArtistId] 分かっていれば渡す。誤って別アーティストの
+ *   曲を掴むのを防げる。
  * @returns {{ track, confidence:'exact'|'artist'|'weak' } | null}
  */
-export function matchTrack(songName, artistName, tracks) {
+export function matchTrack(songName, artistName, tracks, itunesArtistId = null) {
   if (!tracks || !tracks.length) return null;
 
   const target = songKey(songName);
   const artistTarget = songKey(artistName);
-  const sameArtist = tracks.filter((t) => songKey(t.artist) === artistTarget);
 
-  const exact = (sameArtist.length ? sameArtist : tracks).find((t) => songKey(t.title) === target);
+  const sameArtist = tracks.filter((t) => (
+    itunesArtistId
+      ? String(t.itunesArtistId) === String(itunesArtistId)
+      : songKey(t.artist) === artistTarget
+  ));
+
+  const pool = sameArtist.length ? sameArtist : tracks;
+  const exact = pool.find((t) => songKey(t.title) === target);
   if (exact) return { track: exact, confidence: 'exact' };
 
+  // アーティストが確定していれば、曲名が一致しなくても信頼してよい
   if (sameArtist.length) return { track: sameArtist[0], confidence: 'artist' };
 
   return { track: tracks[0], confidence: 'weak' };

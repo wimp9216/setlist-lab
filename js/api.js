@@ -37,7 +37,11 @@ class Throttle {
 const throttles = {
   setlistfm: new Throttle(550),   // 2req/秒の制限に対し余裕を持たせる
   musicbrainz: new Throttle(1100), // 規約上 1req/秒
-  itunes: new Throttle(350),
+  // iTunes Search API は 1IPあたり約20リクエスト/分。
+  // 3.2秒間隔なら約18回/分で収まる。
+  // なおアーティストのカタログ一括取得を使えば、
+  // 200曲でもリクエスト1回で済むので、この間隔でも実用上は問題にならない。
+  itunes: new Throttle(3200),
 };
 
 export class ApiError extends Error {
@@ -49,7 +53,12 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchJson(url, { signal, headers } = {}) {
+/**
+ * @param {number} retries 429 のときに待って再試行する回数。
+ *   iTunes は 1IP 20回/分で 429 を返すが、少し待てば復帰するため、
+ *   1回の失敗で解析全体を止めないようにする。
+ */
+async function fetchJson(url, { signal, headers, retries = 2 } = {}) {
   let res;
   try {
     res = await fetch(url, { signal, headers });
@@ -59,7 +68,13 @@ async function fetchJson(url, { signal, headers } = {}) {
   }
 
   if (res.status === 429) {
-    throw new ApiError('リクエストが多すぎます。少し待ってからもう一度お試しください。', { status: 429, kind: 'ratelimit' });
+    if (retries > 0) {
+      const waitMs = (3 - retries) * 15000 + 15000;  // 15秒 → 30秒
+      await new Promise((r) => setTimeout(r, waitMs));
+      if (signal?.aborted) throw new DOMException('中止しました', 'AbortError');
+      return fetchJson(url, { signal, headers, retries: retries - 1 });
+    }
+    throw new ApiError('リクエストが多すぎます。しばらく待ってからもう一度お試しください。', { status: 429, kind: 'ratelimit' });
   }
   if (res.status === 404) {
     throw new ApiError('該当するデータが見つかりませんでした。', { status: 404, kind: 'notfound' });
@@ -196,11 +211,21 @@ function isIOS() {
     || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
 }
 
-/** iTunes のURLを組み立てる。Worker があれば経由し、無ければ直接。 */
+/**
+ * iTunes のURLを組み立てる。
+ *
+ * 原則は直叩き。iTunes の制限は 1IPあたり約20回/分で、直叩きなら
+ * その枠を利用者が丸ごと使える。一方 Cloudflare Worker の外向きIPは
+ * 他の利用者と共有のため、こちらが何もしていなくても Apple から
+ * 429 を返される（実測で再現）。
+ *
+ * iOS だけは Apple が musics:// へ転送してしまい直叩きできないので、
+ * そこだけ Worker を経由する。
+ */
 function itunesUrl(kind, params) {
   const qs = new URLSearchParams(params).toString();
   const proxy = getProxyUrl();
-  if (proxy) return `${proxy}/itunes/${kind}?${qs}`;
+  if (isIOS() && proxy) return `${proxy}/itunes/${kind}?${qs}`;
   return `https://itunes.apple.com/${kind}?${qs}`;
 }
 

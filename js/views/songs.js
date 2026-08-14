@@ -119,7 +119,11 @@ function runBatch(artist, targets) {
     let stopped = false;
 
     body.appendChild(el('div.stack', [
-      el('div.small', `${targets.length}曲を順番に解析します。1曲あたり数秒かかります。`),
+      el('div.small', `${targets.length}曲を順番に解析します。`),
+      el('div.tiny.dim', { style: { lineHeight: '1.7' } },
+        'まずアーティストの楽曲カタログを1回取得し、以降は手元で照合します。'
+        + 'カタログに無い曲だけ個別に検索するため、そこは1曲あたり3秒ほどかかります'
+        + '（iTunes の制限が1分あたり約20回のため）。'),
       el('div.progress', [bar]),
       status,
       log,
@@ -132,18 +136,51 @@ function runBatch(artist, targets) {
       const songMap = store.getSongMap();
       let done = 0, okCount = 0, ngCount = 0;
 
+      /* --- まずアーティストのカタログを1回だけ引く ---
+         iTunes は 1IP 約20回/分なので、曲ごとに検索すると
+         20曲を超えた時点でレート制限に当たる。
+         カタログ一括取得なら200曲でもリクエスト1回で済む。 */
+      let catalog = [];
+      let itunesArtistId = artist.itunesArtistId || null;
+      try {
+        status.replaceChildren(el('span.spinner'), ' 楽曲カタログを取得中…');
+        if (!itunesArtistId) {
+          const hit = await api.findItunesArtist(artist.name, { signal: controller.signal });
+          if (hit) {
+            itunesArtistId = hit.id;
+            store.updateArtist(artist.mbid, { itunesArtistId });
+          }
+        }
+        if (itunesArtistId) {
+          catalog = await api.fetchArtistCatalog(itunesArtistId, { limit: 200, signal: controller.signal });
+          log.appendChild(el('div.tiny.dim', `カタログ ${catalog.length}曲を取得（以降は照合のみ）`));
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          log.appendChild(el('div.tiny', { style: { color: 'var(--warn)' } },
+            `カタログを取得できませんでした（曲ごとに検索します）: ${e.message}`));
+        }
+      }
+
       for (const song of targets) {
         if (stopped) break;
         status.textContent = `${done + 1} / ${targets.length} — ${song.name}`;
 
         try {
-          // 手動リンク済みならそれを使う。無ければ iTunes で探す。
+          // 手動リンク済み → カタログ照合 → 個別検索 の順に試す
           let track = songMap[song.key] || null;
           let confidence = track ? 'manual' : null;
 
+          if (!track && catalog.length) {
+            const m = matchTrack(song.name, artist.name, catalog, itunesArtistId);
+            // カタログ照合は曲名が一致したときだけ採用する。
+            // 一致しないまま先頭を拾うと、無関係な曲で解析してしまう。
+            if (m && m.confidence === 'exact') { track = m.track; confidence = 'catalog'; }
+          }
+
           if (!track) {
             const hits = await api.searchTracks(`${artist.name} ${song.name}`, { limit: 8, signal: controller.signal });
-            const m = matchTrack(song.name, artist.name, hits);
+            const m = matchTrack(song.name, artist.name, hits, itunesArtistId);
             if (m) { track = m.track; confidence = m.confidence; }
           }
 
