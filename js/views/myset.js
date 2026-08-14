@@ -13,7 +13,7 @@ import {
 import { makeIntensityResolver, collectSongs } from '../features.js';
 import { arcChart } from '../charts.js';
 import * as store from '../store.js';
-import { state, render, go, currentArtist, scopedSetlists, scopeLabel } from '../main.js';
+import { state, render, go, currentArtist, scopedSetlists, scopeLabel, analysisOpts } from '../main.js';
 import { scopeBar } from './scope-bar.js';
 
 /* 編集中のセトリ（保存するまでは localStorage に書かない） */
@@ -78,7 +78,7 @@ function savedList(artist) {
         el('button.btn', {
           onclick: () => {
             const setlists = scopedSetlists();
-            const pred = predictSetlist(setlists, { ...store.getSettings(), mainLength: 13, encoreLength: 3 });
+            const pred = predictSetlist(setlists, analysisOpts({ mainLength: 13, encoreLength: 3 }));
             newDraft(
               pred.sets.map((s) => ({ encore: s.encore, songs: s.songs.map((x) => ({ name: x.name, reason: x.reason })) })),
               `${artist.name} 予想セトリ（自動生成）`
@@ -132,7 +132,7 @@ function savedList(artist) {
    --------------------------------------------------------- */
 
 function builder(artist, setlists) {
-  const opts = store.getSettings();
+  const opts = analysisOpts();
   const pstats = positionStats(setlists, opts);
   const tstats = transitionStats(setlists, opts);
   const sstats = songStats(setlists, opts);

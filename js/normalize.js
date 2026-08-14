@@ -106,6 +106,40 @@ export function displayName(name) {
 }
 
 /**
+ * iTunes のトラック名から版の注記を落として、曲の正式名称に近づける。
+ *   「ブラザーズ (LIVE)」→「ブラザーズ」
+ *   「Pretender - Live Version」→「Pretender」
+ * 曲名そのものに括弧が含まれる曲（「Theme of Hi-Gumi ~...~」など）を
+ * 壊さないよう、版を表す語が入っている括弧だけを落とす。
+ */
+// \b は ASCII の単語文字にしか効かないため、日本語の語には使えない。
+// 英語側だけ (?![a-z]) で語の途中一致を防ぐ。
+const VERSION_WORDS = new RegExp(
+  '^(?:'
+  + '(?:live|acoustic|instrumental|karaoke|remaster(?:ed)?|album|single|tv[\\s-]?size|edit|short|radio)(?![a-z])'
+  + '|ライヴ|ライブ|アコースティック|インスト(?:ゥルメンタル)?|カラオケ|リマスター|アルバム|シングル'
+  + ')[^)）\\]】]*$',
+  'i'
+);
+
+export function cleanTitle(title) {
+  if (!title) return title;
+  let s = String(title);
+
+  // 末尾の「(...)」「（...）」「[...]」が版の注記なら落とす（複数回）
+  for (let i = 0; i < 3; i++) {
+    const m = s.match(/^(.*?)\s*[（(\[【]\s*([^）)\]】]*)\s*[）)\]】]\s*$/);
+    if (!m || !VERSION_WORDS.test(m[2].trim())) break;
+    s = m[1].trim();
+  }
+
+  // 「曲名 - Live」形式
+  s = s.replace(/\s+[-–—]\s*(?:live|acoustic|instrumental|remaster(?:ed)?|album|single)\b.*$/i, '');
+
+  return s.trim() || title;
+}
+
+/**
  * iTunes の検索結果から、目的の曲らしいトラックを選ぶ。
  *
  * setlist.fm はラテン文字しか扱えないため、日本語タイトルの曲は
@@ -136,12 +170,17 @@ export function matchTrack(songName, artistName, tracks, itunesArtistId = null) 
       : songKey(t.artist) === artistTarget
   ));
 
-  const pool = sameArtist.length ? sameArtist : tracks;
-  const exact = pool.find((t) => songKey(t.title) === target);
+  // ライブ版・リマスター版よりも、注記の無いものを優先する。
+  // 「ブラザーズ (LIVE)」ではなく「ブラザーズ」を正式名称にしたいため。
+  const rank = (t) => (cleanTitle(t.title) === t.title ? 0 : 1);
+  const sortClean = (list) => [...list].sort((a, b) => rank(a) - rank(b));
+
+  const pool = sortClean(sameArtist.length ? sameArtist : tracks);
+  const exact = pool.find((t) => songKey(cleanTitle(t.title)) === target || songKey(t.title) === target);
   if (exact) return { track: exact, confidence: 'exact' };
 
   // アーティストが確定していれば、曲名が一致しなくても信頼してよい
-  if (sameArtist.length) return { track: sameArtist[0], confidence: 'artist' };
+  if (sameArtist.length) return { track: pool[0], confidence: 'artist' };
 
   return { track: tracks[0], confidence: 'weak' };
 }
@@ -151,18 +190,25 @@ export function matchTrack(songName, artistName, tracks, itunesArtistId = null) 
 /**
  * セトリを1本のフラットな曲配列にする。
  * 各要素に、そのセトリ内での位置情報を付ける。
+ *
  * @param {object} setlist 内部モデル
- * @param {object} opts { excludeTape }
+ * @param {object} opts { excludeTape, titleOf }
+ *   titleOf は setlist.fm の原名を正式名称に直す関数。
+ *   name は表示用に差し替えるが、key は必ず原名から作る。
+ *   正式名称をキーにすると、曲名を直すたびにキーが変わり、
+ *   解析済みの特徴量や参加記録との対応が切れてしまう。
  */
 export function flattenSongs(setlist, opts = {}) {
-  const { excludeTape = true } = opts;
+  const { excludeTape = true, titleOf = null } = opts;
   const out = [];
   setlist.sets.forEach((set, setIndex) => {
     set.songs.forEach((song, songIndex) => {
       if (excludeTape && song.tape) return;
       out.push({
         ...song,
-        key: songKey(song.name),
+        key: songKey(song.name),                       // 原名基準（不変）
+        name: titleOf ? titleOf(song.name) : song.name, // 表示用
+        rawName: song.name,                             // setlist.fm の原名
         setIndex,
         songIndex,
         encore: set.encore,

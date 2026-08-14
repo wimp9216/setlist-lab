@@ -9,7 +9,7 @@ import { compareSetlists, songStats, arcOf, classifyArc } from '../analyze.js';
 import { makeIntensityResolver } from '../features.js';
 import { arcChart, positionStrip, intensityBar } from '../charts.js';
 import * as store from '../store.js';
-import { state, render, currentArtist, currentSetlists, scopedSetlists, scopeLabel } from '../main.js';
+import { state, render, currentArtist, currentSetlists, scopedSetlists, scopeLabel, analysisOpts } from '../main.js';
 import { scopeBar } from './scope-bar.js';
 import { openSetlistModal } from './setlist-view.js';
 
@@ -74,7 +74,7 @@ export function renderCompare() {
   }
 
   /* --- 横並び比較 --- */
-  const { columns } = compareSetlists(selected, { excludeTape: true });
+  const { columns } = compareSetlists(selected, analysisOpts());
   const commonCount = columns[0]
     ? columns[0].songs.filter((s) => s.isCommon).length
     : 0;
@@ -149,7 +149,7 @@ function compareColumn(col, index, total) {
 
 function arcOverlay(setlists) {
   const resolve = makeIntensityResolver();
-  const arcs = setlists.map((sl) => ({ sl, arc: arcOf(sl, resolve, { excludeTape: true }) }));
+  const arcs = setlists.map((sl) => ({ sl, arc: arcOf(sl, resolve, analysisOpts()) }));
   const usable = arcs.filter((a) => a.arc.points.filter((p) => Number.isFinite(p.intensity)).length >= 6);
 
   if (!usable.length) {
@@ -205,7 +205,7 @@ function arcOverlay(setlists) {
 function tourSummary(setlists, title = '披露曲サマリ') {
   if (!setlists.length) return el('div');
 
-  const stats = songStats(setlists, { excludeTape: true });
+  const stats = songStats(setlists, analysisOpts());
   const resolve = makeIntensityResolver();
 
   return el('div', [

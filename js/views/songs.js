@@ -10,6 +10,7 @@ import * as store from '../store.js';
 import * as api from '../api.js';
 import { analyzePreview, audioSupported } from '../audio.js';
 import { collectSongs, recomputeIntensities, effectiveIntensity, setManualIntensity } from '../features.js';
+import { makeTitleResolver, resolveTitles, pendingSongs, needsManualSongs, setTitle, officialOf } from '../titles.js';
 import { currentArtist, currentSetlists, render } from '../main.js';
 
 export function renderSongs() {
@@ -26,7 +27,8 @@ export function renderSongs() {
     return view;
   }
 
-  const songs = collectSongs(currentSetlists());
+  const titleOf = makeTitleResolver();
+  const songs = collectSongs(currentSetlists(), { titleOf });
   if (!songs.length) {
     view.appendChild(empty('🎵', '曲がありません。', '「公演」画面からセットリストを取り込んでください。'));
     return view;
@@ -34,6 +36,9 @@ export function renderSongs() {
 
   const features = store.getFeatures();
   const analyzed = songs.filter((s) => Number.isFinite(effectiveIntensity(features[s.key])));
+
+  /* --- 曲名の正式名称 --- */
+  view.appendChild(titlePanel(artist, songs));
 
   /* --- 解析パネル --- */
   view.appendChild(analyzePanel(artist, songs, analyzed));
@@ -45,6 +50,157 @@ export function renderSongs() {
   ]));
 
   return view;
+}
+
+/* ---------------------------------------------------------
+   曲名の正式名称化
+   --------------------------------------------------------- */
+
+function titlePanel(artist, songs) {
+  const pending = pendingSongs(songs);       // まだ照合していない
+  const manual = needsManualSongs(songs);    // 照合したが見つからなかった
+  const fixed = songs.filter((s) => s.official !== s.name);
+
+  const box = el('div.card', { style: { marginBottom: '18px' } });
+
+  box.appendChild(el('div.spread', [
+    el('div.grow', [
+      el('b', '曲名'),
+      el('div.tiny.dim', { style: { marginTop: '3px', lineHeight: '1.7' } },
+        pending.length ? `${pending.length}曲が未照合です`
+          : manual.length ? `${manual.length}曲は自動で直せませんでした`
+          : fixed.length ? `${fixed.length}曲を正式名称で表示しています`
+          : '照合済みです'),
+    ]),
+    el('button.btn.sm.primary', {
+      disabled: !pending.length || !!artist.isSample,
+      onclick: () => runTitleResolve(artist, pending),
+    }, pending.length ? '正式名称に直す' : '照合済み'),
+  ]));
+
+  if (fixed.length && pending.length) {
+    box.appendChild(el('div.tiny', { style: { marginTop: '9px', color: 'var(--ok)' } },
+      `${fixed.length}曲はすでに正式名称で表示しています`));
+  }
+
+  box.appendChild(el('div.tiny.dim', { style: { marginTop: '10px', lineHeight: '1.75' } },
+    'setlist.fm はラテン文字しか扱えないため、日本語タイトルの曲はローマ字で登録されています'
+    + '（「宿命」→「Shukumei」）。iTunes と照合して正式名称に直します。'));
+
+  /* --- 自動で直せなかった曲は、その場で手入力できるようにする --- */
+  if (manual.length) {
+    box.appendChild(el('details.fold', { style: { marginTop: '10px' }, open: true }, [
+      el('summary', `自動で直せなかった曲を手入力する（${manual.length}曲）`),
+      el('div.tiny.dim', { style: { lineHeight: '1.7' } },
+        'iTunes に該当が見つからなかった曲です。正式名称を入れて保存すると、'
+        + '公演・比較・分析・マイセトリのすべてに反映されます。'),
+      el('div.stack', { style: { gap: '6px' } }, manual.map((s) => titleFixRow(s))),
+    ]));
+  }
+
+  if (pending.length) {
+    box.appendChild(el('details.fold', { style: { marginTop: '10px' } }, [
+      el('summary', `未照合の曲を見る（${pending.length}曲）`),
+      el('div.stack', { style: { gap: '3px' } }, pending.slice(0, 40).map((s) =>
+        el('div.row', { style: { fontSize: '12.5px' } }, [
+          el('span.grow.ellipsis', s.name),
+          el('span.tiny.dim.nowrap', `${s.count}公演`),
+        ])
+      )),
+      pending.length > 40 ? el('div.tiny.dim', `…ほか${pending.length - 40}曲`) : null,
+    ]));
+  }
+
+  return box;
+}
+
+/** 1曲分の曲名手入力行 */
+function titleFixRow(song) {
+  const input = el('input', {
+    type: 'text',
+    value: officialOf(song.name) === song.name ? '' : officialOf(song.name),
+    placeholder: song.name,
+  });
+  const save = () => {
+    const v = input.value.trim();
+    setTitle(song.name, v);
+    render();
+    toast(v ? `「${v}」に変更しました` : '元の表記に戻しました');
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+
+  return el('div', [
+    el('div.tiny.dim', { style: { marginBottom: '3px' } }, `${song.name}（${song.count}公演）`),
+    el('div.row.tight', [
+      el('div.grow', input),
+      el('button.btn.sm', { onclick: save }, '保存'),
+    ]),
+  ]);
+}
+
+function runTitleResolve(artist, pending) {
+  modal('曲名を正式名称に直す', (body, close) => {
+    const bar = el('i', { style: { width: '0%' } });
+    const status = el('div.small.muted');
+    const log = el('div.stack', { style: { gap: '3px', maxHeight: '240px', overflow: 'auto', marginTop: '4px' } });
+    const controller = new AbortController();
+    let stopped = false;
+
+    body.appendChild(el('div.stack', [
+      el('div.small', `${pending.length}曲を iTunes と照合します。`),
+      el('div.tiny.dim', { style: { lineHeight: '1.7' } },
+        'まずアーティストの楽曲カタログを1回取得して手元で照合し、'
+        + '見つからない曲だけ個別に検索します（iTunes の制限が1分あたり約20回のため、'
+        + 'ここは1曲3秒ほどかかります）。'),
+      el('div.progress', [bar]),
+      status,
+      log,
+      el('div.row', { style: { justifyContent: 'flex-end' } }, [
+        el('button.btn.sm.ghost', {
+          onclick: () => { stopped = true; controller.abort(); close(); render(); },
+        }, '中止'),
+      ]),
+    ]));
+
+    resolveTitles(artist, pending, {
+      signal: controller.signal,
+      onProgress: ({ phase, done, total, current, catalogSize }) => {
+        if (phase === 'artist') status.replaceChildren(el('span.spinner'), ' アーティストを特定中…');
+        else if (phase === 'catalog') status.replaceChildren(el('span.spinner'), ' 楽曲カタログを取得中…');
+        else if (phase === 'catalog-done') {
+          log.appendChild(el('div.tiny.dim', `カタログ ${catalogSize}曲と照合 → ${done}曲が確定`));
+          bar.style.width = `${Math.round((done / total) * 100)}%`;
+        } else if (phase === 'search') {
+          status.textContent = `${done} / ${total} — ${current}`;
+          bar.style.width = `${Math.round((done / total) * 100)}%`;
+        }
+      },
+    }).then(({ resolved, unresolved }) => {
+      if (stopped) return;
+      for (const r of resolved.slice(-40)) {
+        log.appendChild(el('div.tiny', [
+          el('span', { style: { color: 'var(--ok)' } }, '✓ '),
+          el('span.dim', `${r.name} → `),
+          el('span', r.official),
+        ]));
+      }
+      for (const u of unresolved.slice(0, 20)) {
+        log.appendChild(el('div.tiny', [
+          el('span', { style: { color: 'var(--warn)' } }, '– '),
+          el('span', u.name),
+          el('span.dim', ` （${u.reason}）`),
+        ]));
+      }
+      bar.style.width = '100%';
+      status.replaceChildren(el('b', `完了: ${resolved.length}曲を確定 / ${unresolved.length}曲は手入力が必要`));
+      log.scrollTop = log.scrollHeight;
+      setTimeout(() => { close(); render(); }, unresolved.length ? 2600 : 1200);
+    }).catch((e) => {
+      if (e.name === 'AbortError') return;
+      status.replaceChildren(el('span', { style: { color: 'var(--danger)' } }, e.message));
+      bar.style.background = 'var(--danger)';
+    });
+  });
 }
 
 /* ---------------------------------------------------------
@@ -248,17 +404,20 @@ function songRow(song, artist) {
   const v = effectiveIntensity(f);
   const manual = Number.isFinite(f?.manualIntensity);
 
+  const renamed = song.official !== song.name;
+
   return el('div.card', { style: { padding: '10px 12px' } }, [
     el('div.spread', [
       el('div.grow', { style: { minWidth: 0 } }, [
         el('div.row.tight', [
-          el('span.ellipsis', { style: { fontWeight: 700, fontSize: '13.5px' }, title: song.name }, song.name),
+          el('span.ellipsis', { style: { fontWeight: 700, fontSize: '13.5px' }, title: song.official }, song.official),
           manual ? el('span.pill.manual', '手動') : null,
           f?.confidence === 'artist' ? el('span.pill.tape', '要確認') : null,
         ]),
         el('div.tiny.dim', { style: { marginTop: '2px' } }, [
+          // 直した曲は、setlist.fm 側の元表記も見えるようにしておく
+          renamed ? `setlist.fm: ${song.name} ・ ` : '',
           `${song.count}公演で披露`,
-          f?.jaTitle && songKey(f.jaTitle) !== song.key ? ` ・ 照合: ${f.jaTitle}` : '',
           Number.isFinite(f?.bpm) && f.bpm ? ` ・ ${f.bpm} BPM` : '',
         ]),
       ]),
@@ -283,9 +442,39 @@ function songRow(song, artist) {
    --------------------------------------------------------- */
 
 function openTuner(song, artist) {
-  modal(song.name, (body, close) => {
+  modal(song.official || song.name, (body, close) => {
     const f = store.getFeatures()[song.key] || {};
     const current = effectiveIntensity(f);
+
+    /* --- 曲名の修正 --- */
+    const titleInput = el('input', {
+      type: 'text',
+      value: officialOf(song.name),
+      placeholder: '正式名称（例: 宿命）',
+    });
+    const titleBox = el('div.card', [
+      el('div.small.muted', { style: { marginBottom: '8px' } }, '曲名'),
+      el('div.tiny.dim', { style: { marginBottom: '8px', lineHeight: '1.7' } },
+        `setlist.fm での表記: ${song.name}`),
+      titleInput,
+      el('div.row', { style: { marginTop: '9px', justifyContent: 'flex-end' } }, [
+        officialOf(song.name) !== song.name ? el('button.btn.sm.ghost', {
+          onclick: () => {
+            setTitle(song.name, '');
+            close(); render();
+            toast('元の表記に戻しました');
+          },
+        }, '元の表記に戻す') : null,
+        el('button.btn.sm.primary', {
+          onclick: () => {
+            const v = titleInput.value.trim();
+            setTitle(song.name, v);
+            close(); render();
+            toast(v && v !== song.name ? `「${v}」に変更しました` : '元の表記に戻しました');
+          },
+        }, '曲名を保存'),
+      ]),
+    ]);
 
     /* --- 激しさスライダー --- */
     const slider = el('input', {
@@ -336,6 +525,7 @@ function openTuner(song, artist) {
     buildLink();
 
     body.appendChild(el('div.stack', [
+      titleBox,
       el('div.card', [
         el('div.spread', { style: { marginBottom: '8px' } }, [
           el('span.small.muted', '激しさ（0=静か / 100=激しい）'),

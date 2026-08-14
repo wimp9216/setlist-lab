@@ -104,8 +104,12 @@ export function setManualIntensity(name, value) {
   });
 }
 
-/** セトリ群に出てくる曲を、出現回数つきで一覧にする */
-export function collectSongs(setlists, { excludeTape = true } = {}) {
+/**
+ * セトリ群に出てくる曲を、出現回数つきで一覧にする。
+ * name は setlist.fm の原名（キーの元）、official は表示に使う名前。
+ * @param {object} opts { excludeTape, titleOf }
+ */
+export function collectSongs(setlists, { excludeTape = true, titleOf = null } = {}) {
   const map = new Map();
   for (const sl of setlists) {
     for (const set of sl.sets) {
@@ -115,9 +119,9 @@ export function collectSongs(setlists, { excludeTape = true } = {}) {
         if (!k) continue;
         const e = map.get(k);
         if (e) e.count += 1;
-        else map.set(k, { key: k, name: song.name, count: 1 });
+        else map.set(k, { key: k, name: song.name, official: titleOf ? titleOf(song.name) : song.name, count: 1 });
       }
     }
   }
-  return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ja'));
+  return [...map.values()].sort((a, b) => b.count - a.count || a.official.localeCompare(b.official, 'ja'));
 }

@@ -10,6 +10,8 @@ import * as api from '../api.js';
 import { state, render, go, currentArtist, currentSetlists, tourList } from '../main.js';
 import { showRow, openSetlistModal } from './setlist-view.js';
 import { openManualEditor } from './manual-editor.js';
+import { resolveTitles } from '../titles.js';
+import { collectSongs } from '../features.js';
 
 export function renderShows() {
   const view = el('div.view');
@@ -236,22 +238,30 @@ function fetchSetlists(artist) {
         bar.style.width = `${Math.round((page / pages) * 100)}%`;
         status.textContent = `${page} / ${pages} ページ — ${fetched}件取得（全${total}件）`;
       },
-    }).then(({ items, total, truncated }) => {
+    }).then(async ({ items, total, truncated }) => {
       done = true;
       store.saveSetlistCache(artist.mbid, items, total);
 
-      // iTunes のアーティストIDを控えておく（後の楽曲解析で使う）
-      if (!artist.itunesArtistId) {
-        api.findItunesArtist(artist.name)
-          .then((hit) => { if (hit) store.updateArtist(artist.mbid, { itunesArtistId: hit.id }); })
-          .catch(() => { /* 取れなくても致命ではない */ });
+      /* --- 曲名を正式名称に直す（カタログ照合まで） ---
+         setlist.fm の曲名はローマ字表記なので、取り込み直後に
+         iTunes のカタログと突き合わせて読める名前にしておく。
+         カタログ取得はリクエスト2回で済むのでここで自動実行する。
+         残り（個別検索が要る曲）は楽曲画面から明示的に実行してもらう。 */
+      let renamed = 0;
+      try {
+        status.replaceChildren(el('span.spinner'), ' 曲名を照合中…');
+        const songs = collectSongs(items);
+        const res = await resolveTitles(artist, songs, { signal: controller.signal, deep: false });
+        renamed = res.resolved.length;
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn('[titles]', e);
       }
 
       close();
       render();
       toast(truncated
         ? `${items.length}件を取得しました（全${total}件のうち上限まで）`
-        : `${items.length}件を取得しました`);
+        : `${items.length}件を取得・${renamed}曲の曲名を照合しました`);
     }).catch((e) => {
       done = true;
       if (e.name === 'AbortError') return;

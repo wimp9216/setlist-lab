@@ -12,6 +12,7 @@ export const LS_SETLISTS = K('setlists');  // API取得セトリ（mbid 単位�
 export const LS_MANUAL   = K('manual');    // 手動入力セトリ
 export const LS_FEATURES = K('features');  // 楽曲特徴量キャッシュ
 export const LS_SONGMAP  = K('songmap');   // 曲名 → iTunes トラック の手動リンク
+export const LS_TITLES   = K('titles');    // setlist.fm の原名 → 正式名称
 export const LS_ATTEND   = K('attend');    // 参加記録
 export const LS_MYSETS   = K('mysets');    // マイセトリ
 export const LS_PROXY    = K('proxy');     // Cloudflare Worker の URL
@@ -223,6 +224,27 @@ export function unlinkSong(songKey) {
   return map;
 }
 
+/* ---------------- 曲名の正式名称 ---------------- */
+// { [rawKey]: { official, rawName, source:'itunes'|'manual', itunesId, confidence, savedAt } }
+
+export function getTitles() {
+  return load(LS_TITLES, {});
+}
+
+export function saveTitle(rawKey, entry) {
+  const all = getTitles();
+  all[rawKey] = { ...all[rawKey], ...entry, savedAt: Date.now() };
+  save(LS_TITLES, all);
+  return all[rawKey];
+}
+
+export function removeTitle(rawKey) {
+  const all = getTitles();
+  delete all[rawKey];
+  save(LS_TITLES, all);
+  return all;
+}
+
 /* ---------------- 参加記録 ---------------- */
 // { [setlistId]: { attended, seat, companions, memo, rating, savedAt } }
 
@@ -304,7 +326,7 @@ export function setProxyUrl(url) {
 /* ---------------- バックアップ ---------------- */
 
 export function exportAll() {
-  const keys = [LS_ARTISTS, LS_SETLISTS, LS_MANUAL, LS_FEATURES, LS_SONGMAP, LS_ATTEND, LS_MYSETS, LS_PROXY, LS_SETTINGS];
+  const keys = [LS_ARTISTS, LS_SETLISTS, LS_MANUAL, LS_FEATURES, LS_SONGMAP, LS_TITLES, LS_ATTEND, LS_MYSETS, LS_PROXY, LS_SETTINGS];
   const dump = {};
   for (const k of keys) {
     const raw = localStorage.getItem(k);

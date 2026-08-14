@@ -7,6 +7,7 @@ import { el, modal, toast, empty, field, confirmDialog } from '../ui.js';
 import { intensityBar, arcChart } from '../charts.js';
 import { formatDate, flattenSongs, songKey } from '../normalize.js';
 import { makeIntensityResolver } from '../features.js';
+import { makeTitleResolver } from '../titles.js';
 import { arcOf, classifyArc } from '../analyze.js';
 import * as store from '../store.js';
 
@@ -37,6 +38,7 @@ export function showRow(setlist, { selected = false, onclick, trailing } = {}) {
 export function setlistBody(setlist, opts = {}) {
   const { showIntensity = true, intensityOf = null, compact = false } = opts;
   const resolve = intensityOf || makeIntensityResolver();
+  const titleOf = makeTitleResolver();
   const kids = [];
   let n = 0;
 
@@ -48,10 +50,14 @@ export function setlistBody(setlist, opts = {}) {
     for (const song of set.songs) {
       if (!song.tape) n += 1;
       const v = song.tape ? null : resolve(song.name, songKey(song.name));
+      const shown = titleOf(song.name);
       kids.push(el('div.song', [
         el('span.num', song.tape ? '—' : String(n)),
-        el('span.title', { title: song.name }, [
-          song.name,
+        el('span.title', {
+          // 正式名称に直っている場合は、元の表記も参照できるようにしておく
+          title: shown === song.name ? song.name : `${shown}（setlist.fm: ${song.name}）`,
+        }, [
+          shown,
           song.cover ? el('span.tiny.dim', ` (${song.cover} のカバー)`) : null,
           song.tape ? el('span.pill.tape', { style: { marginLeft: '6px' } }, 'SE') : null,
         ]),
@@ -202,6 +208,7 @@ export function openAttendEditor(setlist, onSaved) {
 
 /** セトリをテキスト化してクリップボードへ */
 export function setlistToText(setlist) {
+  const titleOf = makeTitleResolver();
   const lines = [];
   lines.push(`${formatDate(setlist.date)} ${setlist.venue || ''}${setlist.city ? `（${setlist.city}）` : ''}`);
   if (setlist.tour) lines.push(setlist.tour);
@@ -211,7 +218,7 @@ export function setlistToText(setlist) {
     if (set.encore > 0) lines.push(`【アンコール${set.encore > 1 ? set.encore : ''}】`);
     else if (setlist.sets.length > 1) lines.push('【本編】');
     set.songs.forEach((song, i) => {
-      lines.push(`${i + 1}. ${song.name}${song.tape ? '（SE）' : ''}`);
+      lines.push(`${i + 1}. ${titleOf(song.name)}${song.tape ? '（SE）' : ''}`);
     });
     lines.push('');
   }

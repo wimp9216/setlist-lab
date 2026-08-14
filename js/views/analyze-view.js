@@ -14,7 +14,7 @@ import {
 import { makeIntensityResolver } from '../features.js';
 import { arcChart, rankList, positionStrip } from '../charts.js';
 import * as store from '../store.js';
-import { state, render, go, currentArtist, scopedSetlists, scopeLabel } from '../main.js';
+import { state, render, go, currentArtist, scopedSetlists, scopeLabel, analysisOpts } from '../main.js';
 import { scopeBar } from './scope-bar.js';
 
 // つながり分析で選択中の曲（画面をまたいでは保持しない）
@@ -42,7 +42,7 @@ export function renderAnalyze() {
     return view;
   }
 
-  const opts = { excludeTape: store.getSettings().excludeTape, ...store.getSettings() };
+  const opts = analysisOpts();
 
   view.appendChild(positionSection(setlists, opts));
   view.appendChild(transitionSection(setlists, opts));

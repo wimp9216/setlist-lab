@@ -4,6 +4,7 @@
 
 import { el, clear, toast, setlistFmCredit } from './ui.js';
 import * as store from './store.js';
+import { makeTitleResolver } from './titles.js';
 import { SAMPLE_ARTIST, SAMPLE_MBID, buildSampleSetlists, buildSampleFeatures } from './sample-data.js';
 
 import { renderShows }    from './views/shows.js';
@@ -61,6 +62,15 @@ export function scopedSetlists() {
   if (state.tour === '__all__') return all;
   if (state.tour === '__attended__') return all.filter((s) => store.isAttended(s.id));
   return all.filter((s) => (s.tour || '') === state.tour);
+}
+
+/**
+ * 分析まわりに渡す共通オプション。
+ * 設定値に加えて、曲名を正式名称に直す関数を必ず含める。
+ * これを通すことで、集計結果の name が最初から表示用の名前になる。
+ */
+export function analysisOpts(extra = {}) {
+  return { ...store.getSettings(), titleOf: makeTitleResolver(), ...extra };
 }
 
 /** スコープの表示名 */

@@ -8,7 +8,7 @@ import { formatDate, flattenSongs } from '../normalize.js';
 import { songStats } from '../analyze.js';
 import { positionStrip } from '../charts.js';
 import * as store from '../store.js';
-import { state, render, go, currentArtist, currentSetlists } from '../main.js';
+import { state, render, go, currentArtist, currentSetlists, analysisOpts } from '../main.js';
 import { showRow, openSetlistModal, openAttendEditor } from './setlist-view.js';
 import { openManualEditor } from './manual-editor.js';
 
@@ -175,9 +175,9 @@ function summary(all, attended) {
    --------------------------------------------------------- */
 
 function seenSongs(all, attended) {
-  const seen = songStats(attended, { excludeTape: true });
+  const seen = songStats(attended, analysisOpts());
   const seenKeys = new Set(seen.map((s) => s.key));
-  const everything = songStats(all, { excludeTape: true });
+  const everything = songStats(all, analysisOpts());
   const unseen = everything.filter((s) => !seenKeys.has(s.key));
 
   return el('div.section', [
