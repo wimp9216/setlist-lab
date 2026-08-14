@@ -84,11 +84,20 @@ APIキーは Worker 側に秘匿され、ブラウザには出ない。
 1. [Cloudflare ダッシュボード](https://dash.cloudflare.com) → Workers & Pages → Create → Worker
    「Hello World」テンプレートで適当な名前を付けて Deploy
 2. 「Edit code」で `proxy-worker.js` の中身を全部貼り付けて Deploy
-3. Worker の Settings → Variables and Secrets に
-   **`SETLIST_KEY`** を追加し、取得したAPIキーを入れて **Encrypt** を選択 → Deploy
+3. Worker の **Settings → Variables and Secrets → Add**
+   - **Type: `Secret`**（`Text` ではない。Secret にすると以後値は表示されなくなる）
+   - 名前: **`SETLIST_KEY`** ／ 値: 取得したAPIキー
+   - **Deploy を押す**（押さないと反映されない）
 4. `proxy-worker.js` の `ALLOWED_ORIGINS` を自分の GitHub Pages の URL に書き換える
 5. 発行された URL をアプリの **設定 → setlist.fm の取得サーバー** に貼って保存
    → 「接続を確認」でキーの設定状況まで確かめられる
+
+疎通確認はコマンドラインからもできる（`hasKey: true` ならキーまで通っている）:
+
+```sh
+curl -s https://<name>.<sub>.workers.dev/health
+# {"ok":true,"service":"setlist-lab-proxy","hasKey":true,...}
+```
 
 Git 連携は不要（リポジトリ権限を渡さずに済む）。
 

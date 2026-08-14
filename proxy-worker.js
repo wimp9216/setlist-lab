@@ -11,11 +11,16 @@
      2. https://dash.cloudflare.com → Workers & Pages → Create → Worker
         「Hello World」テンプレートで適当な名前を付けて Deploy
      3. 「Edit code」→ このファイルの中身を全部貼り付け → Deploy
-     4. Worker の Settings → Variables and Secrets に
-          名前: SETLIST_KEY   値: 取得したAPIキー
-        を追加して Encrypt（暗号化）を選択 → Deploy
+     4. Worker の Settings → Variables and Secrets → Add
+          Type: Secret（Text ではない）
+          名前: SETLIST_KEY
+          値  : 取得したAPIキー
+        → Deploy（デプロイしないと反映されない）
      5. 発行された URL（https://<name>.<sub>.workers.dev）を
         Setlist Lab の「設定 → setlist.fm の取得サーバー」に貼る
+
+   ※ Type を Secret にすると、以後ダッシュボードでも値は表示されなくなる。
+     APIキーはブラウザにも応答本文にも出ない。
 
    ※ Git連携は不要（リポジトリ権限を渡さずに済む）
    ========================================================= */
