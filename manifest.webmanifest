@@ -1,0 +1,20 @@
+{
+  "name": "Setlist Lab — セトリ比較分析",
+  "short_name": "Setlist Lab",
+  "description": "ライブのセットリストを公演横断で分析し、自分の予想セトリを組めるアプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a12",
+  "theme_color": "#0a0a12",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

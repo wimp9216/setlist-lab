@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="ライブのセットリストを公演横断で分析し、自分の予想セトリを組めるアプリ">
+<title>Setlist Lab — セトリ比較分析</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="disc" aria-hidden="true"></span>
+      <span>
+        <b>Setlist Lab</b>
+        <small>SETLIST ANALYZER</small>
+      </span>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div id="sidebar-artist" style="margin-top:auto"></div>
+  </aside>
+
+  <main class="main" id="main"></main>
+
+  <nav class="tabbar" id="tabbar"></nav>
+</div>
+
+<script type="module" src="js/main.js"></script>
+<noscript>
+  <p style="padding:24px;color:#f2f2f8;font-family:system-ui">
+    このアプリは JavaScript を有効にしてご利用ください。
+  </p>
+</noscript>
+</body>
+</html>
