@@ -29,15 +29,34 @@ export function renderAttend() {
   const all = currentSetlists();
   const attended = all.filter((s) => store.isAttended(s.id));
 
+  // 取得データが期限切れで消えても記録が宙に浮かないよう、控えから復元して並べる
+  const orphans = orphanRecords(all);
+
   /* --- サマリ --- */
   view.appendChild(summary(all, attended));
 
-  if (!attended.length) {
+  if (orphans.length) {
+    view.appendChild(el('div.section', [
+      el('h2', ['セットリストが手元に無い記録', el('span.count', `${orphans.length}件`)]),
+      el('div.notice', { style: { marginBottom: '9px' } },
+        '取得したセットリストは一定期間で破棄されるため、この公演のセトリは手元にありません。記録自体は残っています。「公演」画面から再取得すると内容も戻ります。'),
+      el('div.stack', orphans.map((o) => el('div.card', [
+        el('div.small.muted', formatDate(o.snapshot.date)),
+        el('b', { style: { fontSize: '14px' } }, o.snapshot.venue || '会場不明'),
+        o.snapshot.tour ? el('div.tiny', { style: { color: 'var(--accent)', marginTop: '2px' } }, o.snapshot.tour) : null,
+        (o.seat || o.companions) ? el('div.tiny.muted', { style: { marginTop: '6px' } },
+          [o.seat ? `座席: ${o.seat}` : null, o.companions ? `同行: ${o.companions}` : null].filter(Boolean).join(' ・ ')) : null,
+        o.memo ? el('div.small', { style: { marginTop: '6px', lineHeight: '1.75', whiteSpace: 'pre-wrap', color: 'var(--muted)' } }, o.memo) : null,
+      ]))),
+    ]));
+  }
+
+  if (!attended.length && !orphans.length) {
     view.appendChild(el('div.section', [
       empty('📝', 'まだ参加記録がありません。',
         '下の一覧から参加した公演を選んで印を付けてください。'),
     ]));
-  } else {
+  } else if (attended.length) {
     /* --- 参加した公演 --- */
     view.appendChild(el('div.section', [
       el('h2', ['参加した公演', el('span.count', `${attended.length}公演`)]),
@@ -99,6 +118,18 @@ export function renderAttend() {
   ]));
 
   return view;
+}
+
+/**
+ * 参加記録はあるが、対応するセトリが手元に無いもの。
+ * 取得データは期限で破棄されるため、記録の控え（snapshot）から復元する。
+ */
+function orphanRecords(available) {
+  const have = new Set(available.map((s) => s.id));
+  return Object.entries(store.getAttendance())
+    .filter(([id, rec]) => rec.attended && rec.snapshot && !have.has(id))
+    .map(([id, rec]) => ({ id, ...rec }))
+    .sort((a, b) => (a.snapshot.date < b.snapshot.date ? 1 : -1));
 }
 
 /* ---------------------------------------------------------

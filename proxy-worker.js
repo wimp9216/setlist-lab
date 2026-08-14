@@ -6,7 +6,7 @@
    CORS を付けて返す。APIキーはここに秘匿し、ブラウザには出さない。
 
    使い方（Cloudflare ダッシュボード）:
-     1. setlist.fm に無料登録 → https://www.setlist.fm/settings/api でAPIキーを申請
+     1. setlist.fm に無料登録 → https://www.setlist.fm/settings/apps でAPIキーを申請
         （非商用は無料。標準キーは 2req/秒・1440req/日）
      2. https://dash.cloudflare.com → Workers & Pages → Create → Worker
         「Hello World」テンプレートで適当な名前を付けて Deploy

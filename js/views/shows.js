@@ -82,10 +82,15 @@ function artistBar(artist) {
         el('b', { style: { fontSize: '15px' } }, artist ? artist.name : 'アーティスト未選択'),
         artist?.isSample ? el('span.pill.sample', 'サンプル') : null,
       ]),
-      el('div.tiny.dim', { style: { marginTop: '3px' } },
-        cache
-          ? `最終取得: ${new Date(cache.fetchedAt).toLocaleString('ja-JP')}`
-          : artist ? 'setlist.fm から未取得' : ''),
+      el('div.tiny.dim', { style: { marginTop: '3px' } }, (() => {
+        if (!artist) return '';
+        if (!cache) return 'setlist.fm から未取得';
+        const days = Math.floor(store.cacheAgeDays(artist.mbid) ?? 0);
+        const max = store.getSettings().cacheMaxDays;
+        const left = max - days;
+        return `最終取得: ${new Date(cache.fetchedAt).toLocaleDateString('ja-JP')}`
+          + (artist.isSample || !max ? '' : `（あと${Math.max(0, left)}日で破棄）`);
+      })()),
     ]),
     el('button.btn.sm.primary', { onclick: openArtistSearch }, '＋ アーティスト'),
   ]));

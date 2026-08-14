@@ -203,6 +203,24 @@ export function field(label, input) {
   return el('div.field', [el('label', label), input]);
 }
 
+/**
+ * setlist.fm の帰属表示。
+ *
+ * 利用規約でデータを表示する箇所への帰属表示が義務づけられており、
+ * リンクに nofollow を付けることも禁じられている。
+ * そのため rel には noopener だけを指定する（nofollow は付けない）。
+ */
+export function setlistFmCredit(url = 'https://www.setlist.fm/') {
+  return el('div.credit', [
+    'セットリスト提供: ',
+    el('a', {
+      href: url,
+      target: '_blank',
+      rel: 'noopener',
+    }, 'setlist.fm'),
+  ]);
+}
+
 /** debounce */
 export function debounce(fn, ms = 300) {
   let t = 0;

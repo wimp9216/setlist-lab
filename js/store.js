@@ -51,6 +51,9 @@ export const DEFAULT_SETTINGS = {
   minTransitionCount: 2,    // 定番ブロック検出の最小出現回数
   blockThreshold: 0.6,      // 定番ブロック検出の確率しきい値
   weights: { energy: 0.45, tempo: 0.30, brightness: 0.25 },
+  // setlist.fm の利用規約は、取得したデータの保持を
+  // 「短期間のキャッシュ」に限っている。この日数を過ぎた取得分は起動時に破棄する。
+  cacheMaxDays: 14,
 };
 
 export function getSettings() {
@@ -102,6 +105,41 @@ export function updateArtist(mbid, patch) {
 
 export function getSetlistCache(mbid) {
   return load(LS_SETLISTS, {})[mbid] || null;
+}
+
+/** 取得からの経過日数（未取得なら null） */
+export function cacheAgeDays(mbid) {
+  const c = getSetlistCache(mbid);
+  if (!c?.fetchedAt) return null;
+  return (Date.now() - c.fetchedAt) / 86400000;
+}
+
+/**
+ * 期限切れの取得データを破棄する。
+ *
+ * setlist.fm の利用規約はデータの保持を「短期間のキャッシュ」に限っているため、
+ * 取得分は一定日数で捨てて取り直す。ユーザー自身が作ったもの
+ * （手動入力のセトリ・参加記録・マイセトリ）は setlist.fm のデータではないので消さない。
+ *
+ * @returns {string[]} 破棄したアーティストの mbid
+ */
+export function purgeExpiredSetlists() {
+  const maxDays = getSettings().cacheMaxDays;
+  if (!maxDays) return [];
+
+  const all = load(LS_SETLISTS, {});
+  const purged = [];
+  for (const [mbid, entry] of Object.entries(all)) {
+    // サンプルは setlist.fm 由来ではないので対象外
+    if (mbid.startsWith('sample-')) continue;
+    if (!entry?.fetchedAt) continue;
+    if (Date.now() - entry.fetchedAt > maxDays * 86400000) {
+      delete all[mbid];
+      purged.push(mbid);
+    }
+  }
+  if (purged.length) save(LS_SETLISTS, all);
+  return purged;
 }
 
 export function saveSetlistCache(mbid, items, total) {
@@ -196,10 +234,28 @@ export function getAttendanceFor(setlistId) {
   return getAttendance()[setlistId] || null;
 }
 
-export function setAttendance(setlistId, record) {
+/**
+ * @param {object} record 変更内容。null を渡すと記録ごと削除
+ * @param {object} setlist 記録対象の公演。渡すと最小限の情報を控える。
+ *   取得データは期限で破棄されるので、控えが無いと後から
+ *   「いつ・どこの公演だったか」が分からなくなる。
+ */
+export function setAttendance(setlistId, record, setlist = null) {
   const all = getAttendance();
-  if (record === null) delete all[setlistId];
-  else all[setlistId] = { ...all[setlistId], ...record, savedAt: Date.now() };
+  if (record === null) {
+    delete all[setlistId];
+  } else {
+    const snapshot = setlist ? {
+      date: setlist.date,
+      venue: setlist.venue,
+      city: setlist.city,
+      tour: setlist.tour,
+      artistName: setlist.artistName,
+      songCount: setlist.sets.reduce((a, s) => a + s.songs.filter((x) => !x.tape).length, 0),
+    } : all[setlistId]?.snapshot;
+
+    all[setlistId] = { ...all[setlistId], ...record, snapshot, savedAt: Date.now() };
+  }
   save(LS_ATTEND, all);
   return all;
 }

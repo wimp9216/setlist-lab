@@ -2,7 +2,7 @@
    Setlist Lab — 起動・画面遷移・共有ステート
    ========================================================= */
 
-import { el, clear, toast } from './ui.js';
+import { el, clear, toast, setlistFmCredit } from './ui.js';
 import * as store from './store.js';
 import { SAMPLE_ARTIST, SAMPLE_MBID, buildSampleSetlists, buildSampleFeatures } from './sample-data.js';
 
@@ -86,6 +86,14 @@ export function tourList() {
    遷移・描画
    --------------------------------------------------------- */
 
+// setlist.fm から取り込んだデータを表示する画面
+const SETLISTFM_VIEWS = new Set(['shows', 'compare', 'analyze', 'myset', 'attend']);
+
+/** 表示中のアーティストに setlist.fm 由来の公演があるか */
+function hasSetlistFmData() {
+  return currentSetlists().some((s) => s.source === 'setlistfm');
+}
+
 let mainEl, navEl, tabbarEl;
 
 export function go(viewId, patch = {}) {
@@ -103,7 +111,12 @@ export function render() {
 
   clear(mainEl);
   try {
-    mainEl.appendChild(view.render());
+    const node = view.render();
+    // setlist.fm 由来のデータを出す画面には帰属表示を添える（利用規約で必須）
+    if (SETLISTFM_VIEWS.has(view.id) && hasSetlistFmData()) {
+      node.appendChild(setlistFmCredit());
+    }
+    mainEl.appendChild(node);
   } catch (e) {
     console.error('[render]', e);
     mainEl.appendChild(el('div.view', [
@@ -176,6 +189,10 @@ function boot() {
 
   seedSampleIfEmpty();
 
+  // 利用規約上、取得データは短期キャッシュに限られるので期限切れは捨てる。
+  // 手動入力・参加記録・マイセトリは自分のデータなので残る。
+  const purged = store.purgeExpiredSetlists();
+
   const artists = store.getArtists();
   state.artistMbid = artists.length ? artists[0].mbid : null;
 
@@ -183,6 +200,10 @@ function boot() {
   if (VIEWS.some((v) => v.id === hash)) state.view = hash;
 
   render();
+
+  if (purged.length) {
+    toast(`取得から${store.getSettings().cacheMaxDays}日を過ぎたセットリストを破棄しました。再取得してください。`, { ms: 5000 });
+  }
 
   // Service Worker はデプロイ後（https）でのみ登録する
   if ('serviceWorker' in navigator && location.protocol === 'https:') {

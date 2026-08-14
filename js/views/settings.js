@@ -92,7 +92,7 @@ function proxySection() {
         el('ol', { style: { fontSize: '12.5px', lineHeight: '2', color: 'var(--muted)', paddingLeft: '20px', margin: 0 } }, [
           el('li', [
             'setlist.fm に無料登録し、',
-            el('a', { href: 'https://www.setlist.fm/settings/api', target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--accent)' } }, 'APIキー申請ページ'),
+            el('a', { href: 'https://www.setlist.fm/settings/apps', target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--accent)' } }, 'APIキー申請ページ'),
             ' からキーを取得（非商用は無料）',
           ]),
           el('li', 'Cloudflare ダッシュボード → Workers & Pages → Create → Worker を「Hello World」から作成'),
@@ -153,6 +153,14 @@ function analysisSection() {
         'この確率以上で次の曲に進む場合だけ「固定の流れ」とみなします。', { min: 0.3, max: 1, step: 0.05 }),
       num('minTransitionCount', '定番ブロックの最低回数',
         '同じ流れが最低何回あれば固定とみなすか。', { min: 1, max: 20, step: 1 }),
+    ]),
+
+    el('div.card', { style: { marginTop: '9px' } }, [
+      num('cacheMaxDays', '取得データを保持する日数',
+        'setlist.fm の利用規約は取得データの保持を短期間のキャッシュに限っています。'
+        + 'この日数を過ぎた取り込み分は起動時に破棄され、再取得が必要になります。'
+        + '手動入力のセトリ・参加記録・マイセトリは自分のデータなので破棄されません。',
+        { min: 1, max: 30, step: 1 }),
     ]),
   ]);
 }

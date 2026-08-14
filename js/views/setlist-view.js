@@ -95,7 +95,7 @@ export function openSetlistModal(setlist, { onChange } = {}) {
         el('div.row', [
           el(`button.btn.sm${rec.attended ? '.primary' : ''}`, {
             onclick: () => {
-              store.setAttendance(setlist.id, { attended: !rec.attended });
+              store.setAttendance(setlist.id, { attended: !rec.attended }, setlist);
               renderAttend();
               onChange?.();
             },
@@ -189,7 +189,7 @@ export function openAttendEditor(setlist, onSaved) {
               companions: companions.value.trim(),
               memo: memo.value.trim(),
               rating: Number(rating.value) || 0,
-            });
+            }, setlist);
             close();
             onSaved?.();
             toast('記録しました');

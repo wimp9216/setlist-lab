@@ -341,3 +341,11 @@ table.tbl th{text-align:left;color:var(--muted);font-size:11px;font-weight:700;p
 table.tbl td{padding:6px 7px;border-bottom:1px solid var(--line)}
 table.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
 table.tbl tr:last-child td{border-bottom:none}
+
+/* setlist.fm の帰属表示（利用規約で必須） */
+.credit{
+  margin:26px 0 6px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--dim);text-align:center;
+}
+.credit a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+.credit a:hover{color:var(--accent)}
