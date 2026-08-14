@@ -159,9 +159,17 @@ export async function resolveTitles(artist, songs, { onProgress, signal, deep = 
 
   /* --- 残りを個別検索 --- */
   let done = resolved.length;
+  // 残り時間の見積もりには「実際に検索した数」を使う。
+  // done にはカタログで即決まった曲が含まれており、
+  // それで割ると1曲あたりの所要時間が実態より短く出てしまう。
+  let searched = 0;
   for (const song of remaining) {
     if (signal?.aborted) throw new DOMException('中止しました', 'AbortError');
-    onProgress?.({ phase: 'search', done, total: songs.length, current: song.name });
+    onProgress?.({
+      phase: 'search',
+      done, total: songs.length, current: song.name,
+      searched, searchTotal: remaining.length,
+    });
 
     try {
       requests++;
@@ -184,6 +192,7 @@ export async function resolveTitles(artist, songs, { onProgress, signal, deep = 
       unresolved.push({ ...song, reason: e.message });
     }
     done++;
+    searched++;
   }
 
   onProgress?.({ phase: 'done', done, total: songs.length });

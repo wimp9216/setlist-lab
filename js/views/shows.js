@@ -10,7 +10,7 @@ import * as api from '../api.js';
 import { state, render, go, currentArtist, currentSetlists, tourList } from '../main.js';
 import { showRow, openSetlistModal } from './setlist-view.js';
 import { openManualEditor } from './manual-editor.js';
-import { resolveTitles } from '../titles.js';
+import { resolveTitles, pendingSongs } from '../titles.js';
 import { collectSongs } from '../features.js';
 
 export function renderShows() {
@@ -214,61 +214,127 @@ function openArtistSearch() {
    セトリ取得
    --------------------------------------------------------- */
 
+/**
+ * セトリの取得と、曲名の正式名称化を続けて行う。
+ *
+ * setlist.fm の曲名はローマ字表記なので、取り込んだだけでは読めない。
+ * 別操作にせず、取得の流れの中で最後まで直しきる。
+ *
+ * 曲名の照合には iTunes を使うが、1IPあたり約20回/分の制限があるため
+ * カタログに無い曲は1曲3秒ほどかかる。そのぶん時間がかかるので、
+ * 残り時間を出して、途中で止めても続きからやり直せるようにしている。
+ */
 function fetchSetlists(artist) {
   modal('セットリストを取得', (body, close) => {
     const bar = el('i', { style: { width: '0%' } });
+    const stepLabel = el('div.small', { style: { fontWeight: 700 } }, '① セットリストを取得');
     const status = el('div.small.muted');
+    const detail = el('div.tiny.dim');
     const controller = new AbortController();
-    let done = false;
+    let finished = false;
+
+    const closeBtn = el('button.btn.sm.ghost', {
+      onclick: () => { if (!finished) controller.abort(); close(); render(); },
+    }, '中止');
 
     body.appendChild(el('div.stack', [
-      el('div.small', `${artist.name} の公演を setlist.fm から取り込みます。`),
+      el('div.small', `${artist.name} の公演を setlist.fm から取り込み、曲名を正式名称に直します。`),
+      stepLabel,
       el('div.progress', [bar]),
       status,
-      el('div.row', { style: { justifyContent: 'flex-end' } }, [
-        el('button.btn.sm.ghost', {
-          onclick: () => { if (!done) controller.abort(); close(); },
-        }, '中止'),
-      ]),
+      detail,
+      el('div.row', { style: { justifyContent: 'flex-end' } }, [closeBtn]),
     ]));
 
-    api.fetchAllSetlists(artist.mbid, {
-      signal: controller.signal,
-      onProgress: ({ page, pages, fetched, total }) => {
-        bar.style.width = `${Math.round((page / pages) * 100)}%`;
-        status.textContent = `${page} / ${pages} ページ — ${fetched}件取得（全${total}件）`;
-      },
-    }).then(async ({ items, total, truncated }) => {
-      done = true;
+    (async () => {
+      /* --- ① セトリ取得 --- */
+      const { items, total, truncated } = await api.fetchAllSetlists(artist.mbid, {
+        signal: controller.signal,
+        onProgress: ({ page, pages, fetched, total: t }) => {
+          bar.style.width = `${Math.round((page / pages) * 40)}%`;   // 全体の4割を取得に割り当てる
+          status.textContent = `${page} / ${pages} ページ — ${fetched}件取得（全${t}件）`;
+        },
+      });
       store.saveSetlistCache(artist.mbid, items, total);
 
-      /* --- 曲名を正式名称に直す（カタログ照合まで） ---
-         setlist.fm の曲名はローマ字表記なので、取り込み直後に
-         iTunes のカタログと突き合わせて読める名前にしておく。
-         カタログ取得はリクエスト2回で済むのでここで自動実行する。
-         残り（個別検索が要る曲）は楽曲画面から明示的に実行してもらう。 */
+      /* --- ② 曲名の正式名称化 --- */
+      const songs = collectSongs(items);
+      const targets = pendingSongs(songs);
+
       let renamed = 0;
-      try {
-        status.replaceChildren(el('span.spinner'), ' 曲名を照合中…');
-        const songs = collectSongs(items);
-        const res = await resolveTitles(artist, songs, { signal: controller.signal, deep: false });
-        renamed = res.resolved.length;
-      } catch (e) {
-        if (e.name !== 'AbortError') console.warn('[titles]', e);
+      let leftover = 0;
+
+      if (targets.length) {
+        stepLabel.textContent = '② 曲名を正式名称に直す';
+        detail.textContent = `${targets.length}曲を iTunes と照合します。`;
+
+        let searchStarted = Date.now();
+        try {
+          const res = await resolveTitles(artist, targets, {
+            signal: controller.signal,
+            onProgress: (p) => {
+              const { phase, done, total: t, current, catalogSize } = p;
+              if (phase === 'artist') {
+                status.replaceChildren(el('span.spinner'), ' アーティストを特定中…');
+              } else if (phase === 'catalog') {
+                status.replaceChildren(el('span.spinner'), ' 楽曲カタログを取得中…');
+              } else if (phase === 'catalog-done') {
+                searchStarted = Date.now();   // 個別検索はここから始まる
+                bar.style.width = `${40 + Math.round((done / t) * 60)}%`;
+                status.textContent = `カタログ${catalogSize}曲と照合 — ${done}曲が確定`;
+                detail.textContent = t - done > 0
+                  ? `残り${t - done}曲は個別に検索します（約${estimate(t - done)}）`
+                  : '';
+              } else if (phase === 'search') {
+                bar.style.width = `${40 + Math.round((done / t) * 60)}%`;
+                status.textContent = `${done} / ${t} — ${current}`;
+                // 見積もりは実際に検索した数で割る。done にはカタログで
+                // 即決まった曲が入っており、それを含めると短く出てしまう。
+                const remain = p.searchTotal - p.searched;
+                const perSong = p.searched > 0 ? (Date.now() - searchStarted) / p.searched : 3300;
+                detail.textContent = remain > 0 ? `残り約${estimate(remain, perSong)}` : '';
+              }
+            },
+          });
+          renamed = res.resolved.length;
+          leftover = res.unresolved.length;
+        } catch (e) {
+          if (e.name !== 'AbortError') throw e;
+          // 中断でも、そこまでに直した分は保存済みなので破棄しない
+          finished = true;
+          close();
+          render();
+          toast(`${items.length}件を取得しました（曲名の照合は中断）`);
+          return;
+        }
       }
 
+      finished = true;
+      bar.style.width = '100%';
       close();
       render();
-      toast(truncated
-        ? `${items.length}件を取得しました（全${total}件のうち上限まで）`
-        : `${items.length}件を取得・${renamed}曲の曲名を照合しました`);
-    }).catch((e) => {
-      done = true;
+
+      const msg = [
+        truncated ? `${items.length}件を取得（全${total}件のうち上限まで）` : `${items.length}件を取得`,
+        renamed ? `${renamed}曲の曲名を確定` : null,
+        leftover ? `${leftover}曲は楽曲画面で手入力してください` : null,
+      ].filter(Boolean).join('・');
+      toast(msg, { ms: leftover ? 5000 : 3000 });
+    })().catch((e) => {
+      finished = true;
       if (e.name === 'AbortError') return;
       status.replaceChildren(el('span', { style: { color: 'var(--danger)' } }, e.message));
       bar.style.background = 'var(--danger)';
+      closeBtn.textContent = '閉じる';
     });
   });
+}
+
+/** 残り曲数から待ち時間の目安を作る */
+function estimate(songs, perSongMs = 3300) {
+  const sec = Math.round((songs * perSongMs) / 1000);
+  if (sec < 60) return `${sec}秒`;
+  return `${Math.round(sec / 60)}分`;
 }
 
 export { formatDate, flattenSongs };
