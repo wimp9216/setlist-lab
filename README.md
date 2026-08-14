@@ -140,7 +140,20 @@ GitHub のリポジトリ設定 → Pages → Source を `main` ブランチの�
 |---|---|---|---|
 | setlist.fm API | セトリ・公演情報 | **不可 → Worker 経由** | APIキー |
 | MusicBrainz | アーティスト検索（MBID解決） | 可 | 不要（1req/秒） |
-| iTunes Search API | 日本語曲名・ジャケット・30秒試聴 | 可 | 不要 |
+| iTunes Search API | 日本語曲名・ジャケット・試聴URL | 可（**iOSのみ Worker 経由**） | 不要 |
+| iTunes 試聴音源 | Web Audio 解析の入力 | 可（iOSでもそのまま取れる） | 不要 |
+
+### iPhone / iPad での注意
+
+iTunes Search API は **iOS の User-Agent に対して `musics://`（Music アプリへの
+ディープリンク）へ 301 を返す**ため、iPhone・iPad のブラウザからは直接呼べない
+（`fetch` が `ERR_FAILED` になる）。ブラウザからは User-Agent を差し替えられないので、
+**iTunes の検索も Worker 経由**にしている（Worker はサーバー側なので影響を受けない）。
+
+試聴音源そのもの（`audio-ssl.itunes.apple.com`）は iOS でも普通に取得できるため、
+音声解析の本体は端末内で完結したままで、Worker には検索だけを通す。
+
+Android・PC は Worker が無くても直接呼べるので、未設定なら直叩きにフォールバックする。
 
 ### 楽曲の特徴量について
 

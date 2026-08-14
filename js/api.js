@@ -182,6 +182,40 @@ export async function searchArtistsMusicBrainz(name, { signal } = {}) {
 
 const ITUNES_COUNTRY = 'JP';
 
+/**
+ * iTunes Search API は iPhone / iPad の User-Agent に対して
+ * musics://（Musicアプリへのディープリンク）へ 301 を返すため、
+ * iOS のブラウザからは直接呼べない（fetch が ERR_FAILED になる）。
+ * ブラウザからは User-Agent を差し替えられないので、Worker を経由する。
+ * Worker 未設定でも Android・PC では直接呼べるため、その場合は直叩きにする。
+ */
+function isIOS() {
+  const ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua)
+    // iPadOS はデスクトップ版 Safari を名乗るので、タッチ有無で判定する
+    || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+/** iTunes のURLを組み立てる。Worker があれば経由し、無ければ直接。 */
+function itunesUrl(kind, params) {
+  const qs = new URLSearchParams(params).toString();
+  const proxy = getProxyUrl();
+  if (proxy) return `${proxy}/itunes/${kind}?${qs}`;
+  return `https://itunes.apple.com/${kind}?${qs}`;
+}
+
+/** 直叩きが iOS で失敗したときに、原因が分かるメッセージへ差し替える */
+function itunesError(e) {
+  if (!getProxyUrl() && isIOS()) {
+    return new ApiError(
+      'iPhone・iPad では iTunes の検索を直接呼べません（Apple 側が Music アプリへ転送するため）。'
+      + '設定画面で取得サーバー(Worker)のURLを登録すると使えるようになります。',
+      { kind: 'ios-itunes' }
+    );
+  }
+  return e;
+}
+
 /** 検索結果のトラックを共通形に整える */
 function toTrack(r) {
   return {
@@ -199,19 +233,29 @@ function toTrack(r) {
 
 /** 曲名（＋アーティスト名）で検索する */
 export async function searchTracks(term, { limit = 10, signal } = {}) {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}`
-    + `&country=${ITUNES_COUNTRY}&media=music&entity=song&limit=${limit}`;
-  const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
-  return (data.results || []).map(toTrack);
+  const url = itunesUrl('search', {
+    term, country: ITUNES_COUNTRY, media: 'music', entity: 'song', limit,
+  });
+  try {
+    const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
+    return (data.results || []).map(toTrack);
+  } catch (e) {
+    throw itunesError(e);
+  }
 }
 
 /** アーティスト名から iTunes のアーティストIDを引く */
 export async function findItunesArtist(name, { signal } = {}) {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(name)}`
-    + `&country=${ITUNES_COUNTRY}&media=music&entity=musicArtist&limit=5`;
-  const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
-  const hit = (data.results || [])[0];
-  return hit ? { id: hit.artistId, name: hit.artistName, genre: hit.primaryGenreName } : null;
+  const url = itunesUrl('search', {
+    term: name, country: ITUNES_COUNTRY, media: 'music', entity: 'musicArtist', limit: 5,
+  });
+  try {
+    const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
+    const hit = (data.results || [])[0];
+    return hit ? { id: hit.artistId, name: hit.artistName, genre: hit.primaryGenreName } : null;
+  } catch (e) {
+    throw itunesError(e);
+  }
 }
 
 /**
@@ -219,12 +263,22 @@ export async function findItunesArtist(name, { signal } = {}) {
  * setlist.fm のローマ字表記と突き合わせる「曲名マスタ」を作るのに使う。
  */
 export async function fetchArtistCatalog(itunesArtistId, { limit = 200, signal } = {}) {
-  const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(itunesArtistId)}`
-    + `&entity=song&limit=${limit}&country=${ITUNES_COUNTRY}`;
-  const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
-  return (data.results || [])
-    .filter((r) => r.wrapperType === 'track' && r.kind === 'song')
-    .map(toTrack);
+  const url = itunesUrl('lookup', {
+    id: itunesArtistId, entity: 'song', limit, country: ITUNES_COUNTRY,
+  });
+  try {
+    const data = await throttles.itunes.run(() => fetchJson(url, { signal }));
+    return (data.results || [])
+      .filter((r) => r.wrapperType === 'track' && r.kind === 'song')
+      .map(toTrack);
+  } catch (e) {
+    throw itunesError(e);
+  }
+}
+
+/** iTunes の検索がこの端末で直接使えるか（設定画面の案内用） */
+export function itunesNeedsProxy() {
+  return isIOS() && !getProxyUrl();
 }
 
 /** 試聴音源のバイト列を取る（Web Audio に渡す用） */

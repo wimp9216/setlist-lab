@@ -26,6 +26,15 @@
    ========================================================= */
 
 const API = 'https://api.setlist.fm/rest/1.0';
+const ITUNES = 'https://itunes.apple.com';
+
+// iTunes Search API は iPhone / iPad の User-Agent に対して
+// musics:// （Musicアプリへのディープリンク）へ 301 を返すため、
+// iOS のブラウザからは fetch できない。
+// Worker はサーバー側なので、この UA を名乗れば普通に JSON が返る。
+const DESKTOP_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+  + '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // このオリジンからのみ受け付ける。第三者に踏み台として使われるのを防ぐ。
 // 自分の Pages の URL に書き換えて使う。
@@ -69,6 +78,26 @@ export default {
         hasKey: !!env.SETLIST_KEY,
         allowedOrigins: ALLOWED_ORIGINS,
       }, 200, cors);
+    }
+
+    /* --- iTunes 中継（APIキー不要） --- */
+    if (path === '/itunes/search' || path === '/itunes/lookup') {
+      const allowed = path === '/itunes/search'
+        ? ['term', 'country', 'media', 'entity', 'limit', 'attribute', 'lang']
+        : ['id', 'entity', 'limit', 'country'];
+
+      const qs = new URLSearchParams();
+      for (const k of allowed) {
+        const v = url.searchParams.get(k);
+        if (v !== null && v !== '') qs.set(k, v);
+      }
+      if (!qs.get(path === '/itunes/search' ? 'term' : 'id')) {
+        return json({ error: `${path === '/itunes/search' ? 'term' : 'id'} は必須です。` }, 400, cors);
+      }
+
+      const target = `${ITUNES}${path.replace('/itunes', '')}?${qs}`;
+      return relay(target, { 'User-Agent': DESKTOP_UA, Accept: 'application/json' },
+        cors, ctx, 24 * 60 * 60);   // 楽曲情報は変わらないので長めにキャッシュ
     }
 
     if (!env.SETLIST_KEY) {
@@ -145,6 +174,38 @@ export default {
 };
 
 /* --------------------------------------------------------- */
+
+/**
+ * 上流をそのまま中継する（キャッシュつき）。
+ * setlist.fm 用の処理と共通化せず分けているのは、
+ * setlist.fm 側は 404 を「該当なし」に読み替えるなど固有の扱いがあるため。
+ */
+async function relay(target, headers, cors, ctx, cacheSeconds) {
+  const cacheKey = new Request(target, { method: 'GET' });
+  const cache = caches.default;
+
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    return new Response(await hit.text(), { status: 200, headers: { ...cors, 'X-Cache': 'HIT' } });
+  }
+
+  let res;
+  try {
+    res = await fetch(target, { headers, redirect: 'follow' });
+  } catch (e) {
+    return json({ error: `取得に失敗しました: ${e.message}` }, 502, cors);
+  }
+  if (!res.ok) {
+    return json({ error: `上流が ${res.status} を返しました。` }, res.status, cors);
+  }
+
+  const body = await res.text();
+  ctx.waitUntil(cache.put(cacheKey, new Response(body, {
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `max-age=${cacheSeconds}` },
+  })));
+
+  return new Response(body, { status: 200, headers: { ...cors, 'X-Cache': 'MISS' } });
+}
 
 function isAllowed(origin) {
   if (!origin) return true; // curl 等の Origin なしアクセスは通す（ブラウザ以外の確認用）

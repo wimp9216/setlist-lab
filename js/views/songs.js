@@ -87,6 +87,15 @@ function analyzePanel(artist, songs, analyzed) {
       'このブラウザは Web Audio に対応していないため、自動解析が使えません。各曲の「手動で設定」から入力してください。'));
   }
 
+  // iPhone / iPad は Apple 側の転送で iTunes 検索を直接呼べない
+  if (api.itunesNeedsProxy()) {
+    box.appendChild(el('div.notice.warn', { style: { marginTop: '10px' } }, [
+      el('b', 'この端末では取得サーバーの設定が必要です。'),
+      ' iPhone・iPad からは Apple が iTunes の検索を Music アプリへ転送するため、'
+      + 'ブラウザから直接呼べません。設定画面で Worker のURLを登録してください。',
+    ]));
+  }
+
   box.appendChild(el('div.tiny.dim', { style: { marginTop: '10px', lineHeight: '1.75' } }, [
     '30秒の試聴はサビ付近が切り出されることが多いため、静かな導入を持つバラードが高めに出ることがあります。',
     'ずれている曲は各行の「調整」から直してください。手動で設定した値は再解析しても上書きされません。',
